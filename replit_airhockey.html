@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏒 Аэрохоккей</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(45deg, #0a0a2e, #16213e);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            color: white;
+        }
+        
+        .game-container {
+            text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+        }
+        
+        canvas {
+            border: 3px solid #00ffff;
+            border-radius: 15px;
+            background: #001122;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+        }
+        
+        .score {
+            font-size: 24px;
+            margin: 10px 0;
+            text-shadow: 0 0 10px #00ffff;
+        }
+        
+        .controls {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #aaa;
+        }
+        
+        button {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>🏒 АЭРОХОККЕЙ</h1>
+        <div class="score">
+            <span id="playerScore">Игрок: 0</span> | 
+            <span id="aiScore">ИИ: 0</span>
+        </div>
+        <canvas id="gameCanvas" width="600" height="400"></canvas>
+        <div class="controls">
+            <p>Управление: перетаскивайте синюю ракетку мышью или пальцем</p>
+            <button onclick="resetGame()">🔄 Новая игра</button>
+            <button onclick="resetPuck()">🏒 Сброс шайбы</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Игровые объекты
+        const game = {
+            player: { x: 150, y: 350, radius: 25, color: '#4a90e2' },
+            ai: { x: 450, y: 50, radius: 25, color: '#e74c3c' },
+            puck: { 
+                x: 300, y: 200, radius: 12, 
+                vx: (Math.random() - 0.5) * 6, 
+                vy: (Math.random() - 0.5) * 6,
+                color: '#f1c40f' 
+            },
+            playerScore: 0,
+            aiScore: 0,
+            isDragging: false
+        };
+        
+        // Ограничения движения
+        const bounds = {
+            player: { minY: 200, maxY: 375 },
+            ai: { minY: 25, maxY: 200 },
+            field: { minX: 25, maxX: 575, minY: 25, maxY: 375 }
+        };
+        
+        // Ворота (увеличенные для лучшего попадания)
+        const goals = {
+            ai: { x: 200, y: 0, width: 200, height: 30 },        // ИИ ворота вверху (шире)
+            player: { x: 200, y: 370, width: 200, height: 30 }   // Игрок ворота внизу (шире)
+        };
+        
+        function drawField() {
+            // Очистка
+            ctx.fillStyle = '#001122';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Границы поля
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(20, 20, 560, 360);
+            
+            // Центральная линия
+            ctx.beginPath();
+            ctx.moveTo(20, 200);
+            ctx.lineTo(580, 200);
+            ctx.stroke();
+            
+            // Центральный круг
+            ctx.beginPath();
+            ctx.arc(300, 200, 50, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // Ворота (увеличенные и яркие)
+            ctx.fillStyle = '#ff0000';
+            ctx.fillRect(goals.ai.x, goals.ai.y, goals.ai.width, goals.ai.height);           // ИИ ворота вверху
+            ctx.fillRect(goals.player.x, goals.player.y, goals.player.width, goals.player.height); // Игрок ворота внизу
+            
+            // Дополнительная подсветка ворот
+            ctx.strokeStyle = '#ffff00';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(goals.ai.x, goals.ai.y, goals.ai.width, goals.ai.height);
+            ctx.strokeRect(goals.player.x, goals.player.y, goals.player.width, goals.player.height);
+        }
+        
+        function drawPaddle(paddle) {
+            // Свечение
+            const gradient = ctx.createRadialGradient(paddle.x, paddle.y, 0, paddle.x, paddle.y, paddle.radius + 10);
+            gradient.addColorStop(0, paddle.color);
+            gradient.addColorStop(1, 'transparent');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(paddle.x, paddle.y, paddle.radius + 10, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Основная ракетка
+            ctx.fillStyle = paddle.color;
+            ctx.beginPath();
+            ctx.arc(paddle.x, paddle.y, paddle.radius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Блик
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.beginPath();
+            ctx.arc(paddle.x - 5, paddle.y - 5, paddle.radius * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        function drawPuck() {
+            // Свечение шайбы
+            const gradient = ctx.createRadialGradient(game.puck.x, game.puck.y, 0, game.puck.x, game.puck.y, game.puck.radius + 15);
+            gradient.addColorStop(0, game.puck.color);
+            gradient.addColorStop(1, 'transparent');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(game.puck.x, game.puck.y, game.puck.radius + 15, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Основная шайба
+            ctx.fillStyle = game.puck.color;
+            ctx.beginPath();
+            ctx.arc(game.puck.x, game.puck.y, game.puck.radius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Центр шайбы
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(game.puck.x, game.puck.y, game.puck.radius * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        function updateAI() {
+            const targetX = game.puck.x;
+            const aiX = game.ai.x;
+            
+            // ИИ следует за шайбой только когда она движется к нему
+            if (game.puck.vy < 0 || game.puck.y < 250) {
+                const diff = targetX - aiX;
+                const speed = 3;
+                
+                if (Math.abs(diff) > 5) {
+                    if (diff > 0) {
+                        game.ai.x = Math.min(game.ai.x + speed, bounds.field.maxX - game.ai.radius);
+                    } else {
+                        game.ai.x = Math.max(game.ai.x - speed, bounds.field.minX + game.ai.radius);
+                    }
+                }
+            }
+        }
+        
+        function updatePuck() {
+            // Движение шайбы
+            game.puck.x += game.puck.vx;
+            game.puck.y += game.puck.vy;
+            
+            // Отскок от боковых стен
+            if (game.puck.x <= bounds.field.minX + game.puck.radius || 
+                game.puck.x >= bounds.field.maxX - game.puck.radius) {
+                game.puck.vx *= -0.9;
+                game.puck.x = Math.max(bounds.field.minX + game.puck.radius, 
+                              Math.min(bounds.field.maxX - game.puck.radius, game.puck.x));
+            }
+            
+            // Проверка голов (исправлено)
+            // Гол игрока (шайба в верхние ворота ИИ)
+            if (game.puck.y <= goals.ai.y + goals.ai.height) {
+                if (game.puck.x >= goals.ai.x && game.puck.x <= goals.ai.x + goals.ai.width) {
+                    game.playerScore++;
+                    updateScore();
+                    resetPuck();
+                    return;
+                }
+            }
+            
+            // Гол ИИ (шайба в нижние ворота игрока)
+            if (game.puck.y >= goals.player.y) {
+                if (game.puck.x >= goals.player.x && game.puck.x <= goals.player.x + goals.player.width) {
+                    game.aiScore++;
+                    updateScore();
+                    resetPuck();
+                    return;
+                }
+            }
+            
+            // Отскок от верхней и нижней стен
+            if (game.puck.y <= bounds.field.minY + game.puck.radius || 
+                game.puck.y >= bounds.field.maxY - game.puck.radius) {
+                game.puck.vy *= -0.9;
+                game.puck.y = Math.max(bounds.field.minY + game.puck.radius, 
+                              Math.min(bounds.field.maxY - game.puck.radius, game.puck.y));
+            }
+            
+            // Затухание скорости
+            game.puck.vx *= 0.999;
+            game.puck.vy *= 0.999;
+            
+            // Минимальная скорость (увеличено)
+            const speed = Math.sqrt(game.puck.vx * game.puck.vx + game.puck.vy * game.puck.vy);
+            if (speed < 1.5) {
+                const angle = Math.random() * Math.PI * 2;
+                game.puck.vx = Math.cos(angle) * 3;
+                game.puck.vy = Math.sin(angle) * 3;
+            }
+        }
+        
+        function checkCollisions() {
+            // Столкновение с ракеткой игрока
+            const playerDist = Math.sqrt(
+                (game.puck.x - game.player.x) ** 2 + 
+                (game.puck.y - game.player.y) ** 2
+            );
+            
+            if (playerDist < game.puck.radius + game.player.radius) {
+                handleCollision(game.player);
+            }
+            
+            // Столкновение с ракеткой ИИ
+            const aiDist = Math.sqrt(
+                (game.puck.x - game.ai.x) ** 2 + 
+                (game.puck.y - game.ai.y) ** 2
+            );
+            
+            if (aiDist < game.puck.radius + game.ai.radius) {
+                handleCollision(game.ai);
+            }
+        }
+        
+        function handleCollision(paddle) {
+            const dx = game.puck.x - paddle.x;
+            const dy = game.puck.y - paddle.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance > 0) {
+                // Нормализация
+                const nx = dx / distance;
+                const ny = dy / distance;
+                
+                // Отталкивание
+                const speed = 5;
+                game.puck.vx = nx * speed;
+                game.puck.vy = ny * speed;
+                
+                // Разделение объектов
+                const overlap = (paddle.radius + game.puck.radius) - distance;
+                game.puck.x += nx * overlap;
+                game.puck.y += ny * overlap;
+            }
+        }
+        
+        function resetPuck() {
+            game.puck.x = 300;
+            game.puck.y = 200;
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 4; // Увеличил скорость
+            game.puck.vx = Math.cos(angle) * speed;
+            game.puck.vy = Math.sin(angle) * speed;
+        }
+        
+        function resetGame() {
+            game.playerScore = 0;
+            game.aiScore = 0;
+            updateScore();
+            resetPuck();
+        }
+        
+        function updateScore() {
+            document.getElementById('playerScore').textContent = `Игрок: ${game.playerScore}`;
+            document.getElementById('aiScore').textContent = `ИИ: ${game.aiScore}`;
+            
+            // Проверка победы
+            if (game.playerScore >= 7) {
+                setTimeout(() => {
+                    alert('🏆 Поздравляем! Вы выиграли!');
+                    resetGame();
+                }, 100);
+            } else if (game.aiScore >= 7) {
+                setTimeout(() => {
+                    alert('😔 ИИ победил! Попробуйте еще раз.');
+                    resetGame();
+                }, 100);
+            }
+        }
+        
+        function gameLoop() {
+            drawField();
+            drawPaddle(game.player);
+            drawPaddle(game.ai);
+            drawPuck();
+            
+            updateAI();
+            updatePuck();
+            checkCollisions();
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // События мыши
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const dist = Math.sqrt((x - game.player.x) ** 2 + (y - game.player.y) ** 2);
+            if (dist < game.player.radius * 1.5) {
+                game.isDragging = true;
+            }
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            if (game.isDragging) {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                // Ограничения движения игрока
+                game.player.x = Math.max(bounds.field.minX + game.player.radius, 
+                                Math.min(bounds.field.maxX - game.player.radius, x));
+                game.player.y = Math.max(bounds.player.minY + game.player.radius, 
+                                Math.min(bounds.player.maxY - game.player.radius, y));
+            }
+        });
+        
+        canvas.addEventListener('mouseup', () => {
+            game.isDragging = false;
+        });
+        
+        // События касания для мобильных
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            const x = touch.clientX - rect.left;
+            const y = touch.clientY - rect.top;
+            
+            const dist = Math.sqrt((x - game.player.x) ** 2 + (y - game.player.y) ** 2);
+            if (dist < game.player.radius * 1.5) {
+                game.isDragging = true;
+            }
+        });
+        
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (game.isDragging) {
+                const rect = canvas.getBoundingClientRect();
+                const touch = e.touches[0];
+                const x = touch.clientX - rect.left;
+                const y = touch.clientY - rect.top;
+                
+                game.player.x = Math.max(bounds.field.minX + game.player.radius, 
+                                Math.min(bounds.field.maxX - game.player.radius, x));
+                game.player.y = Math.max(bounds.player.minY + game.player.radius, 
+                                Math.min(bounds.player.maxY - game.player.radius, y));
+            }
+        });
+        
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            game.isDragging = false;
+        });
+        
+        // Запуск игры
+        resetPuck();
+        gameLoop();
+    </script>
+</body>
+</html>
